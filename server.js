@@ -5,7 +5,13 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
+
+// Create sessions directory if it doesn't exist
+const sessionsDir = 'sessions';
+if (!fs.existsSync(sessionsDir)) {
+  fs.mkdirSync(sessionsDir);
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -38,6 +44,39 @@ const upload = multer({
 
 let sessions = {};
 
+// Helper functions for session persistence
+function saveSession(sessionId) {
+  const sessionPath = path.join(sessionsDir, `${sessionId}.json`);
+  fs.writeFileSync(sessionPath, JSON.stringify(sessions[sessionId], null, 2));
+}
+
+function loadSession(sessionId) {
+  const sessionPath = path.join(sessionsDir, `${sessionId}.json`);
+  if (fs.existsSync(sessionPath)) {
+    const data = fs.readFileSync(sessionPath, 'utf8');
+    sessions[sessionId] = JSON.parse(data);
+    return true;
+  }
+  return false;
+}
+
+// Load all existing sessions on startup
+function loadAllSessions() {
+  if (fs.existsSync(sessionsDir)) {
+    const files = fs.readdirSync(sessionsDir);
+    files.forEach(file => {
+      if (file.endsWith('.json')) {
+        const sessionId = file.replace('.json', '');
+        loadSession(sessionId);
+      }
+    });
+    console.log(`Loaded ${Object.keys(sessions).length} existing sessions`);
+  }
+}
+
+// Load sessions on startup
+loadAllSessions();
+
 app.use(express.json());
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
@@ -50,8 +89,10 @@ app.post('/api/session', (req, res) => {
   const sessionId = uuidv4();
   sessions[sessionId] = {
     photos: [],
-    votes: {}
+    votes: {},
+    createdAt: new Date().toISOString()
   };
+  saveSession(sessionId);
   res.json({ sessionId });
 });
 
@@ -70,6 +111,7 @@ app.post('/api/upload/:sessionId', upload.array('photos', 10), (req, res) => {
   }));
   
   sessions[sessionId].photos.push(...uploadedFiles);
+  saveSession(sessionId);
   res.json({ files: uploadedFiles });
 });
 
@@ -80,8 +122,11 @@ app.get('/vote/:sessionId', (req, res) => {
 app.get('/api/session/:sessionId', (req, res) => {
   const { sessionId } = req.params;
   
+  // Try to load from disk if not in memory
   if (!sessions[sessionId]) {
-    return res.status(404).json({ error: 'Session not found' });
+    if (!loadSession(sessionId)) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
   }
   
   res.json(sessions[sessionId]);
@@ -110,14 +155,18 @@ app.post('/api/vote/:sessionId', (req, res) => {
     photoVotes.downvotes.push(voterId);
   }
   
+  saveSession(sessionId);
   res.json({ success: true, votes: photoVotes });
 });
 
 app.get('/api/results/:sessionId', (req, res) => {
   const { sessionId } = req.params;
   
+  // Try to load from disk if not in memory
   if (!sessions[sessionId]) {
-    return res.status(404).json({ error: 'Session not found' });
+    if (!loadSession(sessionId)) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
   }
   
   const results = sessions[sessionId].photos.map(photo => {
@@ -133,6 +182,6 @@ app.get('/api/results/:sessionId', (req, res) => {
   res.json(results);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
