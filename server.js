@@ -96,7 +96,7 @@ app.post('/api/session', (req, res) => {
   res.json({ sessionId });
 });
 
-app.post('/api/upload/:sessionId', upload.array('photos', 10), (req, res) => {
+app.post('/api/upload/:sessionId', upload.array('photos', 100), (req, res) => {
   const { sessionId } = req.params;
   
   if (!sessions[sessionId]) {
