@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Results</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .btn {
+            background: #ff4458;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+            margin-right: 10px;
+        }
+        
+        .btn:hover {
+            background: #e63946;
+        }
+        
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .photo-result {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .photo-result img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+        
+        .photo-stats {
+            padding: 15px;
+        }
+        
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .like {
+            color: #44d884;
+        }
+        
+        .dislike {
+            color: #ff4458;
+        }
+        
+        .score {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            color: #333;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+        }
+        
+        .share-link {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+        
+        .share-link input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+        
+        .error {
+            background: #ffe0e0;
+            color: #d00;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Session Results</h1>
+        
+        <div class="section">
+            <button class="btn" onclick="refreshResults()">Refresh Results</button>
+            <button class="btn" onclick="goToVoting()">Go to Voting Page</button>
+            
+            <div class="share-link">
+                <h3>Voting link for this session:</h3>
+                <input type="text" id="votingLink" readonly>
+                <button class="btn" onclick="copyLink()">Copy Link</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Voting Results</h2>
+            <div class="results" id="results">
+                <div class="loading">Loading results...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get session ID from URL
+        const urlParts = window.location.pathname.split('/');
+        const sessionId = urlParts[urlParts.length - 1];
+        
+        if (!sessionId) {
+            document.getElementById('results').innerHTML = '<div class="error">No session ID provided</div>';
+        } else {
+            // Set voting link
+            const votingUrl = `${window.location.origin}/vote/${sessionId}`;
+            document.getElementById('votingLink').value = votingUrl;
+            
+            // Load results
+            refreshResults();
+            
+            // Auto-refresh every 5 seconds
+            setInterval(refreshResults, 5000);
+        }
+        
+        async function refreshResults() {
+            const resultsDiv = document.getElementById('results');
+            
+            try {
+                const response = await fetch(`/api/results/${sessionId}`);
+                
+                if (!response.ok) {
+                    resultsDiv.innerHTML = '<div class="error">Session not found</div>';
+                    return;
+                }
+                
+                const results = await response.json();
+                
+                if (results.length === 0) {
+                    resultsDiv.innerHTML = '<div class="loading">No votes yet!</div>';
+                    return;
+                }
+                
+                resultsDiv.innerHTML = results.map((photo, index) => `
+                    <div class="photo-result">
+                        <img src="${photo.path}" alt="Photo">
+                        <div class="photo-stats">
+                            <div style="text-align: center; font-weight: bold; margin-bottom: 10px;">
+                                #${index + 1}
+                            </div>
+                            <div class="score">Score: ${photo.score}</div>
+                            <div class="stats-row">
+                                <div class="stat like">
+                                    <span>👍</span>
+                                    <span>${photo.upvotes}</span>
+                                </div>
+                                <div class="stat dislike">
+                                    <span>👎</span>
+                                    <span>${photo.downvotes}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                resultsDiv.innerHTML = '<div class="error">Failed to load results</div>';
+            }
+        }
+        
+        function copyLink() {
+            const votingLink = document.getElementById('votingLink');
+            votingLink.select();
+            document.execCommand('copy');
+            alert('Link copied to clipboard!');
+        }
+        
+        function goToVoting() {
+            window.location.href = `/vote/${sessionId}`;
+        }
+    </script>
+</body>
+</html>

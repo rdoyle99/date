@@ -119,6 +119,10 @@ app.get('/vote/:sessionId', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'vote.html'));
 });
 
+app.get('/results/:sessionId', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'results.html'));
+});
+
 app.get('/api/session/:sessionId', (req, res) => {
   const { sessionId } = req.params;
   
