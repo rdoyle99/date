@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Photos</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+        
+        .header {
+            background: #ff4458;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .card-stack {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #f5f5f5;
+        }
+        
+        .card {
+            position: absolute;
+            width: 90%;
+            height: 85%;
+            left: 5%;
+            top: 5%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            cursor: grab;
+            transition: transform 0.2s, opacity 0.2s;
+            overflow: hidden;
+        }
+        
+        .card.dragging {
+            transition: none;
+        }
+        
+        .card.swiped-left {
+            transform: translateX(-150%) rotate(-30deg);
+            opacity: 0;
+        }
+        
+        .card.swiped-right {
+            transform: translateX(150%) rotate(30deg);
+            opacity: 0;
+        }
+        
+        .card img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #f5f5f5;
+        }
+        
+        .card-overlay {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .like-overlay, .nope-overlay {
+            position: absolute;
+            top: 50px;
+            padding: 10px 20px;
+            border: 4px solid;
+            border-radius: 10px;
+            font-size: 48px;
+            font-weight: bold;
+            transform: rotate(-30deg);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .like-overlay {
+            right: 20px;
+            color: #44d884;
+            border-color: #44d884;
+        }
+        
+        .nope-overlay {
+            left: 20px;
+            color: #ff4458;
+            border-color: #ff4458;
+        }
+        
+        .card.tilting-right .like-overlay {
+            opacity: 1;
+        }
+        
+        .card.tilting-left .nope-overlay {
+            opacity: 1;
+        }
+        
+        .actions {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            padding: 20px;
+            background: white;
+        }
+        
+        .action-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: transform 0.2s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .action-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        .action-btn:active {
+            transform: scale(0.95);
+        }
+        
+        .dislike-btn {
+            background: white;
+            color: #ff4458;
+            border: 2px solid #ff4458;
+        }
+        
+        .like-btn {
+            background: white;
+            color: #44d884;
+            border: 2px solid #44d884;
+        }
+        
+        .complete-message {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .complete-message h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .progress {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Swipe to Vote!</h1>
+            <p>Swipe right if you like, left if you don't</p>
+        </div>
+        
+        <div class="card-stack" id="cardStack">
+            <div class="loading">Loading photos...</div>
+        </div>
+        
+        <div class="actions">
+            <button class="action-btn dislike-btn" id="dislikeBtn">✕</button>
+            <button class="action-btn like-btn" id="likeBtn">♥</button>
+        </div>
+        
+        <div class="complete-message" id="completeMessage">
+            <h2>Thanks for voting! 🎉</h2>
+            <p>Your feedback has been recorded.</p>
+        </div>
+    </div>
+
+    <script>
+        let photos = [];
+        let currentIndex = 0;
+        let sessionId = '';
+        let voterId = localStorage.getItem('voterId') || generateVoterId();
+        
+        function generateVoterId() {
+            const id = 'voter_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('voterId', id);
+            return id;
+        }
+        
+        async function init() {
+            sessionId = window.location.pathname.split('/').pop();
+            
+            try {
+                const response = await fetch(`/api/session/${sessionId}`);
+                if (!response.ok) throw new Error('Session not found');
+                
+                const data = await response.json();
+                photos = data.photos;
+                
+                if (photos.length === 0) {
+                    document.getElementById('cardStack').innerHTML = '<div class="loading">No photos yet!</div>';
+                    return;
+                }
+                
+                displayCard();
+            } catch (error) {
+                document.getElementById('cardStack').innerHTML = '<div class="loading">Session not found!</div>';
+            }
+        }
+        
+        function displayCard() {
+            if (currentIndex >= photos.length) {
+                document.getElementById('cardStack').style.display = 'none';
+                document.querySelector('.actions').style.display = 'none';
+                document.getElementById('completeMessage').style.display = 'block';
+                return;
+            }
+            
+            const photo = photos[currentIndex];
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `
+                <img src="${photo.path}" alt="Photo">
+                <div class="card-overlay">
+                    <div class="like-overlay">LIKE</div>
+                    <div class="nope-overlay">NOPE</div>
+                </div>
+                <div class="progress">${currentIndex + 1} / ${photos.length}</div>
+            `;
+            
+            document.getElementById('cardStack').innerHTML = '';
+            document.getElementById('cardStack').appendChild(card);
+            
+            setupSwipe(card);
+        }
+        
+        function setupSwipe(card) {
+            let startX = 0;
+            let currentX = 0;
+            let isDragging = false;
+            
+            function handleStart(e) {
+                isDragging = true;
+                startX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+                card.classList.add('dragging');
+            }
+            
+            function handleMove(e) {
+                if (!isDragging) return;
+                
+                currentX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+                const deltaX = currentX - startX;
+                const rotation = deltaX * 0.1;
+                
+                card.style.transform = `translateX(${deltaX}px) rotate(${rotation}deg)`;
+                
+                if (deltaX > 50) {
+                    card.classList.add('tilting-right');
+                    card.classList.remove('tilting-left');
+                } else if (deltaX < -50) {
+                    card.classList.add('tilting-left');
+                    card.classList.remove('tilting-right');
+                } else {
+                    card.classList.remove('tilting-left', 'tilting-right');
+                }
+            }
+            
+            function handleEnd() {
+                if (!isDragging) return;
+                isDragging = false;
+                card.classList.remove('dragging');
+                
+                const deltaX = currentX - startX;
+                const threshold = 100;
+                
+                if (Math.abs(deltaX) > threshold) {
+                    if (deltaX > 0) {
+                        swipeRight(card);
+                    } else {
+                        swipeLeft(card);
+                    }
+                } else {
+                    card.style.transform = '';
+                    card.classList.remove('tilting-left', 'tilting-right');
+                }
+            }
+            
+            card.addEventListener('mousedown', handleStart);
+            card.addEventListener('mousemove', handleMove);
+            card.addEventListener('mouseup', handleEnd);
+            card.addEventListener('mouseleave', handleEnd);
+            
+            card.addEventListener('touchstart', handleStart);
+            card.addEventListener('touchmove', handleMove);
+            card.addEventListener('touchend', handleEnd);
+        }
+        
+        async function vote(photoId, voteType) {
+            try {
+                await fetch(`/api/vote/${sessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        photoId: photoId,
+                        vote: voteType,
+                        voterId: voterId
+                    })
+                });
+            } catch (error) {
+                console.error('Vote failed:', error);
+            }
+        }
+        
+        function swipeLeft(card) {
+            card.classList.add('swiped-left');
+            vote(photos[currentIndex].id, 'down');
+            setTimeout(() => {
+                currentIndex++;
+                displayCard();
+            }, 300);
+        }
+        
+        function swipeRight(card) {
+            card.classList.add('swiped-right');
+            vote(photos[currentIndex].id, 'up');
+            setTimeout(() => {
+                currentIndex++;
+                displayCard();
+            }, 300);
+        }
+        
+        document.getElementById('dislikeBtn').addEventListener('click', () => {
+            const card = document.querySelector('.card');
+            if (card && !card.classList.contains('swiped-left') && !card.classList.contains('swiped-right')) {
+                swipeLeft(card);
+            }
+        });
+        
+        document.getElementById('likeBtn').addEventListener('click', () => {
+            const card = document.querySelector('.card');
+            if (card && !card.classList.contains('swiped-left') && !card.classList.contains('swiped-right')) {
+                swipeRight(card);
+            }
+        });
+        
+        init();
+    </script>
+</body>
+</html>
