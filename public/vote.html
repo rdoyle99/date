@@ -250,6 +250,24 @@
                 min-height: 300px;
             }
         }
+        
+        .footer {
+            padding: 15px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            background: white;
+            border-top: 1px solid #eee;
+        }
+        
+        .footer a {
+            color: #ff4458;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -276,8 +294,15 @@
             <h2>Thanks for voting! 🎉</h2>
             <p>Your feedback has been recorded.</p>
         </div>
+        
+        <div class="footer">
+            Built by <a href="https://rpdoyle.com" target="_blank" rel="noopener">rpdoyle.com</a>
+        </div>
     </div>
 
+    <!-- 100% privacy-first analytics -->
+    <script async src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    
     <script>
         let photos = [];
         let currentIndex = 0;
@@ -412,6 +437,11 @@
                         voterId: voterId
                     })
                 });
+                
+                // Track voting event
+                if (window.sa_event) {
+                    window.sa_event('photo_voted', { type: voteType });
+                }
             } catch (error) {
                 console.error('Vote failed:', error);
             }

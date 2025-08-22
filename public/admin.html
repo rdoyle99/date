@@ -246,6 +246,23 @@
         .btn + .btn {
             margin-left: 10px;
         }
+        
+        .footer {
+            margin-top: 50px;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .footer a {
+            color: #ff4458;
+            text-decoration: none;
+        }
+        
+        .footer a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -295,8 +312,15 @@
             <button class="btn" onclick="refreshResults()">Refresh Results</button>
             <div class="results" id="results"></div>
         </div>
+        
+        <div class="footer">
+            Built by <a href="https://rpdoyle.com" target="_blank" rel="noopener">rpdoyle.com</a>
+        </div>
     </div>
 
+    <!-- 100% privacy-first analytics -->
+    <script async src="https://scripts.simpleanalyticscdn.com/latest.js"></script>
+    
     <script>
         let selectedFiles = [];
         let currentSessionId = null;
@@ -454,6 +478,11 @@
                     
                     showSuccess(uploadResult.message || `Successfully uploaded ${selectedFiles.length} photos`);
                     
+                    // Track photo upload event
+                    if (window.sa_event) {
+                        window.sa_event('photos_uploaded', { count: selectedFiles.length });
+                    }
+                    
                     selectedFiles = [];
                     updatePreview();
                     document.getElementById('projectName').value = '';
@@ -477,6 +506,11 @@
             votingLink.select();
             document.execCommand('copy');
             alert('Link copied to clipboard!');
+            
+            // Track link copy event
+            if (window.sa_event) {
+                window.sa_event('voting_link_copied');
+            }
         }
         
         async function refreshResults() {
