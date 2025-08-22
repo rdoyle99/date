@@ -183,8 +183,9 @@
         
         .actions {
             display: flex;
-            gap: 10px;
+            gap: 15px;
             margin-top: 20px;
+            align-items: center;
         }
         
         .loading {
@@ -192,23 +193,93 @@
             color: #666;
             padding: 20px;
         }
+        
+        .error-message {
+            background: #ffe0e0;
+            color: #d00;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .success-message {
+            background: #e0ffe0;
+            color: #070;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .file-info {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+        
+        .preview-item.error {
+            border: 2px solid #ff4458;
+        }
+        
+        .preview-item .error-badge {
+            position: absolute;
+            bottom: 5px;
+            left: 5px;
+            right: 5px;
+            background: rgba(255, 68, 88, 0.9);
+            color: white;
+            padding: 3px 5px;
+            font-size: 11px;
+            border-radius: 3px;
+        }
+        
+        .project-name-input {
+            flex: 1;
+            max-width: 300px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        
+        .btn + .btn {
+            margin-left: 10px;
+        }
     </style>
 </head>
 <body>
+    <div class="nav-header" style="background: #ff4458; padding: 15px 0; margin-bottom: 30px;">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; gap: 20px; align-items: center;">
+                <a href="/" style="color: white; text-decoration: none; font-size: 18px; font-weight: 600;">Photo Voting</a>
+                <nav style="display: flex; gap: 15px;">
+                    <a href="/" style="color: rgba(255,255,255,0.9); text-decoration: none;">Dashboard</a>
+                    <a href="/admin" style="color: white; text-decoration: none; font-weight: 500;">Create Project</a>
+                </nav>
+            </div>
+            <div id="userBadge" style="color: rgba(255,255,255,0.9); font-size: 14px;"></div>
+        </div>
+    </div>
     <div class="container">
-        <h1>Dating Photo Voter - Admin Panel</h1>
+        <h1>Create New Project</h1>
         
         <div class="section">
             <h2>Upload Photos</h2>
             <div class="upload-area" id="uploadArea">
                 <p>📸 Drag & drop photos here or click to select</p>
                 <p style="margin-top: 10px; color: #666;">You can select multiple photos at once</p>
+                <p style="margin-top: 5px; color: #999; font-size: 14px;">Max file size: 10MB | Formats: JPEG, PNG, GIF, WEBP</p>
             </div>
             <input type="file" id="fileInput" multiple accept="image/*">
             
             <div class="preview-container" id="previewContainer"></div>
             
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+            
             <div class="actions">
+                <input type="text" class="project-name-input" id="projectName" placeholder="Enter project name (optional)">
                 <button class="btn" id="createSessionBtn" disabled>Create Voting Session</button>
             </div>
             
@@ -229,6 +300,15 @@
     <script>
         let selectedFiles = [];
         let currentSessionId = null;
+        
+        // Show user badge
+        fetch('/api/user/projects')
+            .then(res => res.json())
+            .then(data => {
+                if (data.userId) {
+                    document.getElementById('userBadge').textContent = `User: ${data.userId.substring(0, 8)}...`;
+                }
+            });
         
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
@@ -257,7 +337,28 @@
         });
         
         function handleFiles(files) {
-            selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+            const maxSize = 10 * 1024 * 1024; // 10MB
+            const validFiles = [];
+            const errors = [];
+            
+            Array.from(files).forEach(file => {
+                if (!file.type.startsWith('image/')) {
+                    errors.push(`${file.name}: Not an image file`);
+                } else if (file.size > maxSize) {
+                    errors.push(`${file.name}: File too large (${(file.size / 1024 / 1024).toFixed(1)}MB, max 10MB)`);
+                } else {
+                    validFiles.push(file);
+                }
+            });
+            
+            selectedFiles = validFiles;
+            
+            if (errors.length > 0) {
+                showError(errors.join('<br>'));
+            } else {
+                hideError();
+            }
+            
             updatePreview();
             createSessionBtn.disabled = selectedFiles.length === 0;
         }
@@ -269,9 +370,11 @@
                 reader.onload = (e) => {
                     const div = document.createElement('div');
                     div.className = 'preview-item';
+                    const sizeText = (file.size / 1024 / 1024).toFixed(1) + 'MB';
                     div.innerHTML = `
                         <img src="${e.target.result}" alt="Preview">
                         <button class="remove" onclick="removeFile(${index})">×</button>
+                        <div class="file-info">${sizeText}</div>
                     `;
                     previewContainer.appendChild(div);
                 };
@@ -285,16 +388,51 @@
             createSessionBtn.disabled = selectedFiles.length === 0;
         }
         
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.innerHTML = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 10000);
+        }
+        
+        function hideError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.innerHTML = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 5000);
+        }
+        
         createSessionBtn.addEventListener('click', async () => {
             if (selectedFiles.length === 0) return;
             
             createSessionBtn.disabled = true;
             createSessionBtn.textContent = 'Creating session...';
+            hideError();
             
             try {
-                const sessionResponse = await fetch('/api/session', { method: 'POST' });
+                const projectName = document.getElementById('projectName').value.trim();
+                const sessionResponse = await fetch('/api/session', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: projectName })
+                });
+                
+                if (!sessionResponse.ok) {
+                    throw new Error('Failed to create session');
+                }
+                
                 const { sessionId } = await sessionResponse.json();
                 currentSessionId = sessionId;
+                
+                createSessionBtn.textContent = 'Uploading photos...';
                 
                 const formData = new FormData();
                 selectedFiles.forEach(file => {
@@ -306,20 +444,29 @@
                     body: formData
                 });
                 
+                const uploadResult = await uploadResponse.json();
+                
                 if (uploadResponse.ok) {
                     const votingUrl = `${window.location.origin}/vote/${sessionId}`;
                     document.getElementById('votingLink').value = votingUrl;
                     document.getElementById('shareLink').style.display = 'block';
                     document.getElementById('resultsSection').style.display = 'block';
                     
+                    showSuccess(uploadResult.message || `Successfully uploaded ${selectedFiles.length} photos`);
+                    
                     selectedFiles = [];
                     updatePreview();
+                    document.getElementById('projectName').value = '';
                     createSessionBtn.textContent = 'Create Voting Session';
                     
                     refreshResults();
+                } else {
+                    showError(uploadResult.details || uploadResult.error || 'Upload failed');
+                    createSessionBtn.disabled = false;
+                    createSessionBtn.textContent = 'Create Voting Session';
                 }
             } catch (error) {
-                alert('Failed to create session. Please try again.');
+                showError('Failed to create session. Please try again.');
                 createSessionBtn.disabled = false;
                 createSessionBtn.textContent = 'Create Voting Session';
             }

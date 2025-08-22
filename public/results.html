@@ -14,12 +14,14 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f5f5;
-            padding: 20px;
+            padding: 0;
+            margin: 0;
         }
         
         .container {
             max-width: 1200px;
             margin: 0 auto;
+            padding: 20px;
         }
         
         h1 {
@@ -134,6 +136,18 @@
     </style>
 </head>
 <body>
+    <div class="nav-header" style="background: #ff4458; padding: 15px 0; margin-bottom: 30px;">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; gap: 20px; align-items: center;">
+                <a href="/" style="color: white; text-decoration: none; font-size: 18px; font-weight: 600;">Photo Voting</a>
+                <nav style="display: flex; gap: 15px;">
+                    <a href="/" style="color: rgba(255,255,255,0.9); text-decoration: none;">Dashboard</a>
+                    <a href="#" id="voteLink" style="color: rgba(255,255,255,0.9); text-decoration: none;">Vote</a>
+                    <a href="#" style="color: white; text-decoration: none; font-weight: 500;">Results</a>
+                </nav>
+            </div>
+        </div>
+    </div>
     <div class="container">
         <h1>Session Results</h1>
         
@@ -167,6 +181,7 @@
             // Set voting link
             const votingUrl = `${window.location.origin}/vote/${sessionId}`;
             document.getElementById('votingLink').value = votingUrl;
+            document.getElementById('voteLink').href = `/vote/${sessionId}`;
             
             // Load results
             refreshResults();
