@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +30,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit per file
+    files: 100 // Max 100 files at once
+  },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -37,7 +42,7 @@ const upload = multer({
     if (mimetype && extname) {
       return cb(null, true);
     } else {
-      cb(new Error('Only images are allowed'));
+      cb(new multer.MulterError('INVALID_FILE_TYPE', file.originalname));
     }
   }
 });
@@ -78,41 +83,103 @@ function loadAllSessions() {
 loadAllSessions();
 
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.static('public'));
 app.use('/uploads', express.static('uploads'));
 
 app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 app.post('/api/session', (req, res) => {
   const sessionId = uuidv4();
+  const userId = req.cookies.userId || uuidv4();
+  
   sessions[sessionId] = {
     photos: [],
     votes: {},
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    userId: userId,
+    name: req.body.name || `Project ${new Date().toLocaleDateString()}`
   };
+  
+  // Set userId cookie if not already set
+  if (!req.cookies.userId) {
+    res.cookie('userId', userId, {
+      maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
+      httpOnly: true,
+      sameSite: 'lax'
+    });
+  }
+  
   saveSession(sessionId);
-  res.json({ sessionId });
+  res.json({ sessionId, userId });
 });
 
-app.post('/api/upload/:sessionId', upload.array('photos', 100), (req, res) => {
+// Custom error handling middleware for uploads
+const handleUploadErrors = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ 
+        error: 'File too large',
+        details: `File size exceeds 10MB limit`,
+        field: err.field
+      });
+    } else if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({ 
+        error: 'Too many files',
+        details: 'Maximum 100 files allowed at once'
+      });
+    } else if (err.code === 'INVALID_FILE_TYPE') {
+      return res.status(400).json({ 
+        error: 'Invalid file type',
+        details: `File "${err.field}" is not a supported image format. Allowed formats: JPEG, JPG, PNG, GIF, WEBP`,
+        field: err.field
+      });
+    }
+  }
+  next(err);
+};
+
+app.post('/api/upload/:sessionId', (req, res, next) => {
   const { sessionId } = req.params;
   
   if (!sessions[sessionId]) {
     return res.status(404).json({ error: 'Session not found' });
   }
   
-  const uploadedFiles = req.files.map(file => ({
-    id: uuidv4(),
-    filename: file.filename,
-    originalName: file.originalname,
-    path: `/uploads/${file.filename}`
-  }));
-  
-  sessions[sessionId].photos.push(...uploadedFiles);
-  saveSession(sessionId);
-  res.json({ files: uploadedFiles });
+  upload.array('photos', 100)(req, res, (err) => {
+    if (err) {
+      return handleUploadErrors(err, req, res, next);
+    }
+    
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ 
+        error: 'No files uploaded',
+        details: 'Please select at least one image to upload'
+      });
+    }
+    
+    const uploadedFiles = req.files.map(file => ({
+      id: uuidv4(),
+      filename: file.filename,
+      originalName: file.originalname,
+      path: `/uploads/${file.filename}`,
+      size: file.size
+    }));
+    
+    sessions[sessionId].photos.push(...uploadedFiles);
+    saveSession(sessionId);
+    res.json({ 
+      success: true,
+      files: uploadedFiles,
+      message: `Successfully uploaded ${uploadedFiles.length} image${uploadedFiles.length > 1 ? 's' : ''}`
+    });
+  });
 });
 
 app.get('/vote/:sessionId', (req, res) => {
@@ -184,6 +251,48 @@ app.get('/api/results/:sessionId', (req, res) => {
   }).sort((a, b) => b.score - a.score);
   
   res.json(results);
+});
+
+// API endpoint to get user's projects
+app.get('/api/user/projects', (req, res) => {
+  const userId = req.cookies.userId;
+  
+  if (!userId) {
+    return res.json({ projects: [] });
+  }
+  
+  const userProjects = Object.keys(sessions)
+    .filter(sessionId => sessions[sessionId].userId === userId)
+    .map(sessionId => ({
+      id: sessionId,
+      name: sessions[sessionId].name,
+      createdAt: sessions[sessionId].createdAt,
+      photoCount: sessions[sessionId].photos.length,
+      voteCount: Object.keys(sessions[sessionId].votes).reduce((total, photoId) => {
+        const votes = sessions[sessionId].votes[photoId];
+        return total + votes.upvotes.length + votes.downvotes.length;
+      }, 0)
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  
+  res.json({ projects: userProjects, userId });
+});
+
+// API endpoint to update project name
+app.put('/api/project/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const { name } = req.body;
+  
+  if (!sessions[sessionId]) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+  
+  if (name && name.trim()) {
+    sessions[sessionId].name = name.trim();
+    saveSession(sessionId);
+  }
+  
+  res.json({ success: true, name: sessions[sessionId].name });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
